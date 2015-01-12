@@ -80,6 +80,7 @@ class GitHubBackend(Backend):
             db_pr.additions = d[u'additions']
             db_pr.deletions = d[u'deletions']
             db_pr.changed_files = d[u'changed_files']
+            db_pr.merged = True
 
         db_pr.user = self.fetch_user(pr.user)
 

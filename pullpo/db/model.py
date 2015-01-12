@@ -20,7 +20,7 @@
 #     Santiago Dueñas <sduenas@bitergia.com>
 #
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, ForeignKey
+from sqlalchemy import Column, Boolean, DateTime, Integer, String, Text, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -62,7 +62,7 @@ class PullRequest(Base):
     closed_at = Column(DateTime())
     merged_at = Column(DateTime())
     state = Column(String(32))
-    merged = Integer(String(1))
+    merged = Column(Boolean(), default=False)
     mergeable_state = Column(String(32))
     merge_commit_sha = Column(String(256))
     additions = Column(Integer)
