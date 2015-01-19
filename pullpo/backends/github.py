@@ -29,28 +29,33 @@ from pullpo.db.model import User, Commit, Comment, Event, ReviewComment,\
 
 class GitHubBackend(Backend):
 
-    def __init__(self, user, password):
+    def __init__(self, user, password, session):
         super(GitHubBackend, self).__init__('github')
 
         self.gh = login(user, password=password)
         self.USERS_CACHE = {}
+        self.session = session
 
-    def fetch(self, owner, repository):
+    def fetch(self, owner, repository, since=None):
         repo = self.gh.repository(owner, repository)
 
-        db_repo = Repository()
-        db_repo.name = repo.name
-        db_repo.url = repo.html_url
+        db_repo = Repository().as_unique(self.session,
+                                         owner=owner,
+                                         repository=repository)
 
-        issues = repo.issues(state='all')
+        if not db_repo.id:
+            db_repo.name = repo.name
+            db_repo.url = repo.html_url
+
+        issues = repo.issues(state='all', sort='updated',
+                             direction='asc', since=since)
 
         for issue in issues:
-            pr = issue.pull_request()
+            db_pr = self.fetch_pull_request(issue)
 
-            if not pr:
+            # Check if the issue is a pull request
+            if not db_pr:
                 continue
-
-            db_pr = self.fetch_pull_request(pr)
 
             # Events are stored in issue object
             for event in issue.events():
@@ -61,56 +66,70 @@ class GitHubBackend(Backend):
 
         return db_repo
 
-    def fetch_pull_request(self, pr):
-        db_pr = PullRequest()
-        db_pr.number = pr.number
-        db_pr.github_id = pr.id
-        db_pr.title = pr.title
-        db_pr.body = pr.body
-        db_pr.state = pr.state
-        db_pr.created_at = pr.created_at
-        db_pr.updated_at = pr.updated_at
-        db_pr.closed_at = pr.closed_at
-        db_pr.merged_at = pr.merged_at
-        db_pr.mergeable_state = pr.mergeable_state
+    def fetch_pull_request(self, issue):
+        pr = issue.pull_request()
 
-        if pr.is_merged():
-            d = pr.as_dict()
-            db_pr.merge_commit_sha = d[u'merge_commit_sha']
-            db_pr.additions = d[u'additions']
-            db_pr.deletions = d[u'deletions']
-            db_pr.changed_files = d[u'changed_files']
-            db_pr.merged = True
+        if not pr:
+            return None
 
-        db_pr.user = self.fetch_user(pr.user)
+        db_pr = PullRequest().as_unique(self.session,
+                                        github_id=pr.id)
 
-        if pr.merged_by:
-            db_pr.merged_by = self.fetch_user(pr.merged_by)
-        if pr.assignee:
-            db_pr.assignee = self.fetch_user(pr.assignee)
+        if not db_pr.id:
+            db_pr.number = pr.number
+            db_pr.created_at = self.unmarshal_timestamp(pr.created_at)
+
+        # Don't trust on this pull request date
+        # Take the one from the issue object
+        updated_at = self.unmarshal_timestamp(issue.updated_at)
+
+        if db_pr.updated_at != updated_at:
+            db_pr.title = pr.title
+            db_pr.body = pr.body
+            db_pr.state = pr.state
+            db_pr.updated_at = updated_at
+            db_pr.closed_at = self.unmarshal_timestamp(pr.closed_at)
+            db_pr.merged_at = self.unmarshal_timestamp(pr.merged_at)
+            db_pr.mergeable_state = pr.mergeable_state
+
+            if pr.is_merged():
+                d = pr.as_dict()
+                db_pr.merge_commit_sha = d[u'merge_commit_sha']
+                db_pr.additions = d[u'additions']
+                db_pr.deletions = d[u'deletions']
+                db_pr.changed_files = d[u'changed_files']
+                db_pr.merged = True
+
+            db_pr.user = self.fetch_user(pr.user)
+
+            if pr.merged_by:
+                db_pr.merged_by = self.fetch_user(pr.merged_by)
+            if pr.assignee:
+                db_pr.assignee = self.fetch_user(pr.assignee)
 
         for comment in pr.issue_comments():
-            db_comment = self.fetch_comment(comment)
+            db_comment = self.fetch_comment(comment, db_pr.id)
             db_pr.comments.append(db_comment)
 
         for review in pr.review_comments():
-            db_review = self.fetch_review_comment(review)
+            db_review = self.fetch_review_comment(review, db_pr.id)
             db_pr.review_comments.append(db_review)
 
         for commit in pr.commits():
-            db_commit = self.fetch_commit(commit)
+            db_commit = self.fetch_commit(commit, db_pr.id)
             db_pr.commits.append(db_commit)
 
         return db_pr
 
     def fetch_issue_event(self, event):
-        db_event = Event()
-
         e = event.as_dict()
+        event_id = e['id']
 
-        db_event.event_id = e['id']
+        db_event = Event().as_unique(self.session,
+                                     event_id=event_id)
+        db_event.event_id = event_id
         db_event.event = event.event
-        db_event.created_at = event.created_at
+        db_event.created_at = self.unmarshal_timestamp(event.created_at)
         db_event.commit_id = event.commit_id
         db_event.actor = self.fetch_user(event.actor)
 
@@ -123,9 +142,8 @@ class GitHubBackend(Backend):
             return None
 
         if user.login not in self.USERS_CACHE:
-            db_user = User()
+            db_user = User().as_unique(self.session, login=user.login)
             db_user.avatar_url = user.avatar_url
-            db_user.login = user.login
             db_user.url = user.url
             db_user.type = user.type
 
@@ -135,29 +153,43 @@ class GitHubBackend(Backend):
 
         return db_user
 
-    def fetch_comment(self, comment):
-        db_comment = Comment()
-        db_comment.body = comment.body
-        db_comment.url = comment.url
-        db_comment.created_at = comment.created_at
-        db_comment.updated_at = comment.updated_at
-        db_comment.user = self.fetch_user(comment.user)
+    def fetch_comment(self, comment, pr_id):
+        created_at = self.unmarshal_timestamp(comment.created_at)
+        updated_at = self.unmarshal_timestamp(comment.updated_at)
+        user = self.fetch_user(comment.user)
+
+        db_comment = Comment().as_unique(self.session, pull_request_id=pr_id,
+                                         user_id=user.id,
+                                         created_at=created_at)
+
+        if db_comment.updated_at != updated_at:
+            db_comment.body = comment.body
+            db_comment.url = comment.url
+            db_comment.updated_at = updated_at
+            db_comment.user = user
         return db_comment
 
-    def fetch_review_comment(self, review):
-        db_review = ReviewComment()
-        db_review.body = review.body
-        db_review.url = review.url
-        db_review.created_at = review.created_at
-        db_review.updated_at = review.updated_at
-        db_review.user = self.fetch_user(review.user)
-        db_review.commit_id = review.commit_id
-        db_review.original_commit_id = review.original_commit_id
+    def fetch_review_comment(self, review, pr_id):
+        created_at = self.unmarshal_timestamp(review.created_at)
+        updated_at = self.unmarshal_timestamp(review.updated_at)
+        user = self.fetch_user(review.user)
+
+        db_review = ReviewComment().as_unique(self.session, pull_request_id=pr_id,
+                                              commit_id=review.commit_id,
+                                              user_id=user.id,
+                                              created_at=created_at)
+
+        if db_review.updated_at != updated_at:
+            db_review.body = review.body
+            db_review.url = review.url
+            db_review.updated_at = updated_at
+            db_review.user = user
+            db_review.original_commit_id = review.original_commit_id
         return db_review
 
-    def fetch_commit(self, commit):
-        db_commit = Commit()
-        db_commit.sha = commit.sha
+    def fetch_commit(self, commit, pr_id):
+        db_commit = Commit().as_unique(self.session, pull_request_id=pr_id,
+                                       sha=commit.sha)
         db_commit.author = self.fetch_user(commit.author)
         db_commit.committer = self.fetch_user(commit.committer)
 
@@ -172,6 +204,12 @@ class GitHubBackend(Backend):
         return db_commit
 
     def unmarshal_timestamp(self, ts):
-        # FIXME: store time zone data
+        import datetime
         import dateutil.parser
-        return dateutil.parser.parse(ts).replace(tzinfo=None)
+
+        if ts is None:
+            return None
+        elif isinstance(ts, datetime.datetime):
+            return ts.replace(tzinfo=None)
+        else:
+            return dateutil.parser.parse(ts).replace(tzinfo=None)

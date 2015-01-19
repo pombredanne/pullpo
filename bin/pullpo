@@ -33,10 +33,18 @@ def main():
     db = Database(args.db_user, args.db_password, args.db_name,
                   args.db_hostname, args.db_port)
 
-    backend = GitHubBackend(args.gh_user, args.gh_password)
-    repo = backend.fetch(args.owner, args.repository)
-
     with db.connect() as session:
+        repo = db.get_repository(session, args.owner, args.repository)
+
+        if repo:
+            max_date = db.last_pull_request(session, args.owner, args.repository)
+            since = max_date[0] if max_date else None
+        else:
+            since = None
+
+        backend = GitHubBackend(args.gh_user, args.gh_password, session)
+        repo = backend.fetch(args.owner, args.repository, since)
+
         store(session, repo)
 
 

@@ -27,8 +27,9 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
+from sqlalchemy.sql import func
 
-from pullpo.db.model import Base
+from pullpo.db.model import Base, Repository, PullRequest
 
 
 class Database(object):
@@ -67,3 +68,15 @@ class Database(object):
             session.execute(table.delete())
             session.commit()
         session.close()
+
+    def get_repository(self, session, owner, repository):
+        return session.query(Repository).\
+            filter(Repository.owner == owner,
+                   Repository.repository == repository).first()
+
+    def last_pull_request(self, session, owner, repository):
+        max_date = session.query(func.max(PullRequest.updated_at)).join(Repository).\
+            filter(PullRequest.repo_id == Repository.id,
+                   Repository.owner == owner,
+                   Repository.repository == repository).first()
+        return max_date

@@ -28,7 +28,24 @@ from sqlalchemy.orm import relationship
 Base = declarative_base()
 
 
-class User(Base):
+class UniqueObject(object):
+
+    @classmethod
+    def unique_filter(cls, query, *arg, **kw):
+        raise NotImplementedError
+
+    @classmethod
+    def as_unique(cls, session, *arg, **kw):
+        return _unique(
+                    session,
+                    cls,
+                    cls.unique_filter,
+                    cls,
+                    arg, kw
+               )
+
+
+class User(UniqueObject, Base):
     __tablename__ = 'people'
 
     id = Column(Integer, primary_key=True)
@@ -37,19 +54,30 @@ class User(Base):
     avatar_url = Column(String(256))
     type = Column(String(32))
 
+    @classmethod
+    def unique_filter(cls, query, login):
+        return query.filter(User.login == login)
 
-class Repository(Base):
+
+class Repository(UniqueObject, Base):
     __tablename__ = 'repositories'
 
     id = Column(Integer, primary_key=True)
+    owner = Column(String(128))
+    repository = Column(String(128))
     name = Column(String(128))
     url = Column(String(256))
 
     prs = relationship('PullRequest', backref='repositories',
-                       lazy='joined', cascade="save-update, merge, delete")
+                       cascade="save-update, merge, delete")
+
+    @classmethod
+    def unique_filter(cls, query, owner, repository):
+        return query.filter(Repository.owner == owner,
+                            Repository.repository == repository)
 
 
-class PullRequest(Base):
+class PullRequest(UniqueObject, Base):
     __tablename__ = 'pull_requests'
 
     id = Column(Integer, primary_key=True)
@@ -57,10 +85,10 @@ class PullRequest(Base):
     github_id = Column(Integer)
     title = Column(String(256))
     body = Column(Text())
-    created_at = Column(DateTime())
-    updated_at = Column(DateTime())
-    closed_at = Column(DateTime())
-    merged_at = Column(DateTime())
+    created_at = Column(DateTime(timezone=False))
+    updated_at = Column(DateTime(timezone=False))
+    closed_at = Column(DateTime(timezone=False))
+    merged_at = Column(DateTime(timezone=False))
     state = Column(String(32))
     merged = Column(Boolean(), default=False)
     mergeable_state = Column(String(32))
@@ -94,8 +122,12 @@ class PullRequest(Base):
     assignee = relationship('User', foreign_keys=[assignee_id])
     merged_by = relationship('User', foreign_keys=[merged_by_id])
 
+    @classmethod
+    def unique_filter(cls, query, github_id):
+        return query.filter(PullRequest.github_id == github_id)
 
-class Comment(Base):
+
+class Comment(UniqueObject, Base):
     __tablename__ = 'comments'
 
     id = Column(Integer, primary_key=True)
@@ -111,8 +143,14 @@ class Comment(Base):
     pull_request = relationship('PullRequest')
     user = relationship('User', foreign_keys=[user_id])
 
+    @classmethod
+    def unique_filter(cls, query, pull_request_id, user_id, created_at):
+        return query.filter(Comment.pull_request_id == pull_request_id,
+                            Comment.user_id == user_id,
+                            Comment.created_at == created_at)
 
-class ReviewComment(Base):
+
+class ReviewComment(UniqueObject, Base):
     __tablename__ = 'review_comments'
 
     id = Column(Integer, primary_key=True)
@@ -130,8 +168,15 @@ class ReviewComment(Base):
     pull_request = relationship('PullRequest')
     user = relationship('User', foreign_keys=[user_id])
 
+    @classmethod
+    def unique_filter(cls, query, pull_request_id, commit_id, user_id, created_at):
+        return query.filter(ReviewComment.pull_request_id == pull_request_id,
+                            ReviewComment.commit_id == commit_id,
+                            ReviewComment.user_id == user_id,
+                            ReviewComment.created_at == created_at)
 
-class Commit(Base):
+
+class Commit(UniqueObject, Base):
     __tablename__ = 'commits'
 
     id = Column(Integer, primary_key=True)
@@ -149,8 +194,13 @@ class Commit(Base):
     author = relationship('User', foreign_keys=[author_id])
     committer = relationship('User', foreign_keys=[committer_id])
 
+    @classmethod
+    def unique_filter(cls, query, pull_request_id, sha):
+        return query.filter(Commit.pull_request_id == pull_request_id,
+                            Commit.sha == sha)
 
-class Event(Base):
+
+class Event(UniqueObject, Base):
     __tablename__ = 'events'
 
     id = Column(Integer, primary_key=True)
@@ -165,3 +215,21 @@ class Event(Base):
                              ForeignKey('pull_requests.id', ondelete='CASCADE'),)
     pull_request = relationship('PullRequest')
     actor = relationship('User')
+
+    @classmethod
+    def unique_filter(cls, query, event_id):
+        return query.filter(Event.event_id == event_id)
+
+
+def _unique(session, cls, queryfunc, constructor, arg, kw):
+    with session.no_autoflush:
+        q = session.query(cls)
+        q = queryfunc(q, *arg, **kw)
+
+        obj = q.first()
+
+        if not obj:
+            obj = constructor(*arg, **kw)
+
+        session.add(obj)
+    return obj
