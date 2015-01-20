@@ -23,33 +23,45 @@
 
 from argparse import ArgumentParser
 
+from pullpo.backends import BackendError
 from pullpo.backends.github import GitHubBackend
-from pullpo.db.database import Database
+from pullpo.db.database import Database, DatabaseError
 
 
 def main():
     args = parse_args()
 
-    db = Database(args.db_user, args.db_password, args.db_name,
-                  args.db_hostname, args.db_port)
+    try:
+        db = Database(args.db_user, args.db_password, args.db_name,
+                      args.db_hostname, args.db_port)
+    except DatabaseError, e:
+        raise RuntimeError(str(e))
 
-    with db.connect() as session:
-        repo = db.get_repository(session, args.owner, args.repository)
+    session = db.connect()
+    repo = db.get_repository(session, args.owner, args.repository)
 
-        if repo:
-            max_date = db.last_pull_request(session, args.owner, args.repository)
-            since = max_date[0] if max_date else None
-        else:
-            since = None
+    if repo:
+        max_date = db.last_pull_request(session, args.owner, args.repository)
+        since = max_date[0] if max_date else None
+    else:
+        since = None
 
+    try:
         backend = GitHubBackend(args.gh_user, args.gh_password, session)
-        repo = backend.fetch(args.owner, args.repository, since)
 
-        store(session, repo)
+        for repo in backend.fetch(args.owner, args.repository, since):
+            store(db, session, repo)
+    except BackendError, e:
+        raise RuntimeError(str(e))
+    finally:
+        session.close()
 
 
-def store(session, repository):
-    session.add(repository)
+def store(db, session, repository):
+    try:
+        db.store(session, repository)
+    except Exception, e:
+        raise RuntimeError(str(e))
 
 
 def parse_args():
@@ -92,4 +104,11 @@ def parse_args():
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+
+    try:
+        main()
+    except RuntimeError, e:
+        s = "Error: %s\n" % str(e)
+        sys.stderr.write(s)
+        sys.exit(1)

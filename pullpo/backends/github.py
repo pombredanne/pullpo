@@ -20,24 +20,40 @@
 #     Santiago Dueñas <sduenas@bitergia.com>
 #
 
-from github3 import login
+import github3
 
-from pullpo.backends import Backend
+from pullpo.backends import Backend, BackendError
 from pullpo.db.model import User, Commit, Comment, Event, ReviewComment,\
     Repository, PullRequest
 
 
 class GitHubBackend(Backend):
 
+    PULL_REQUESTS_COUNT = 25
+
     def __init__(self, user, password, session):
         super(GitHubBackend, self).__init__('github')
 
-        self.gh = login(user, password=password)
+        self.gh = github3.login(user, password=password)
         self.USERS_CACHE = {}
         self.session = session
 
     def fetch(self, owner, repository, since=None):
+        try:
+            for repo in  self._fetch(owner, repository, since):
+                yield repo
+        except github3.exceptions.ForbiddenError, e:
+            msg = "GitHub - " + e.message + "To resume, wait some minutes"
+            raise BackendError(msg)
+        except github3.exceptions.AuthenticationFailed, e:
+            raise BackendError("GitHub - " + e.message)
+
+    def _fetch(self, owner, repository, since=None):
         repo = self.gh.repository(owner, repository)
+
+        if repo.is_null():
+            raise BackendError("GitHub - Repository %s:%s does not exist."
+                               % (owner, repository))
 
         db_repo = Repository().as_unique(self.session,
                                          owner=owner,
@@ -50,8 +66,10 @@ class GitHubBackend(Backend):
         issues = repo.issues(state='all', sort='updated',
                              direction='asc', since=since)
 
+        count = self.PULL_REQUESTS_COUNT
+
         for issue in issues:
-            db_pr = self.fetch_pull_request(issue)
+            db_pr = self._fetch_pull_request(issue)
 
             # Check if the issue is a pull request
             if not db_pr:
@@ -59,14 +77,20 @@ class GitHubBackend(Backend):
 
             # Events are stored in issue object
             for event in issue.events():
-                db_event = self.fetch_issue_event(event)
+                db_event = self._fetch_issue_event(event)
                 db_pr.events.append(db_event)
 
             db_repo.prs.append(db_pr)
 
-        return db_repo
+            count = count - 1
 
-    def fetch_pull_request(self, issue):
+            if not count:
+                count = self.PULL_REQUESTS_COUNT
+                yield db_repo
+
+        yield db_repo
+
+    def _fetch_pull_request(self, issue):
         pr = issue.pull_request()
 
         if not pr:
@@ -100,28 +124,28 @@ class GitHubBackend(Backend):
                 db_pr.changed_files = d[u'changed_files']
                 db_pr.merged = True
 
-            db_pr.user = self.fetch_user(pr.user)
+            db_pr.user = self._fetch_user(pr.user)
 
             if pr.merged_by:
-                db_pr.merged_by = self.fetch_user(pr.merged_by)
+                db_pr.merged_by = self._fetch_user(pr.merged_by)
             if pr.assignee:
-                db_pr.assignee = self.fetch_user(pr.assignee)
+                db_pr.assignee = self._fetch_user(pr.assignee)
 
         for comment in pr.issue_comments():
-            db_comment = self.fetch_comment(comment, db_pr.id)
+            db_comment = self._fetch_comment(comment, db_pr.id)
             db_pr.comments.append(db_comment)
 
         for review in pr.review_comments():
-            db_review = self.fetch_review_comment(review, db_pr.id)
+            db_review = self._fetch_review_comment(review, db_pr.id)
             db_pr.review_comments.append(db_review)
 
         for commit in pr.commits():
-            db_commit = self.fetch_commit(commit, db_pr.id)
+            db_commit = self._fetch_commit(commit, db_pr.id)
             db_pr.commits.append(db_commit)
 
         return db_pr
 
-    def fetch_issue_event(self, event):
+    def _fetch_issue_event(self, event):
         e = event.as_dict()
         event_id = e['id']
 
@@ -131,13 +155,13 @@ class GitHubBackend(Backend):
         db_event.event = event.event
         db_event.created_at = self.unmarshal_timestamp(event.created_at)
         db_event.commit_id = event.commit_id
-        db_event.actor = self.fetch_user(event.actor)
+        db_event.actor = self._fetch_user(event.actor)
 
         if event.event in ('labeled', 'unlabeled'):
             db_event.extra = e['label']['name']
         return db_event
 
-    def fetch_user(self, user):
+    def _fetch_user(self, user):
         if not user:
             return None
 
@@ -153,10 +177,10 @@ class GitHubBackend(Backend):
 
         return db_user
 
-    def fetch_comment(self, comment, pr_id):
+    def _fetch_comment(self, comment, pr_id):
         created_at = self.unmarshal_timestamp(comment.created_at)
         updated_at = self.unmarshal_timestamp(comment.updated_at)
-        user = self.fetch_user(comment.user)
+        user = self._fetch_user(comment.user)
 
         db_comment = Comment().as_unique(self.session, pull_request_id=pr_id,
                                          user_id=user.id,
@@ -169,10 +193,10 @@ class GitHubBackend(Backend):
             db_comment.user = user
         return db_comment
 
-    def fetch_review_comment(self, review, pr_id):
+    def _fetch_review_comment(self, review, pr_id):
         created_at = self.unmarshal_timestamp(review.created_at)
         updated_at = self.unmarshal_timestamp(review.updated_at)
-        user = self.fetch_user(review.user)
+        user = self._fetch_user(review.user)
 
         db_review = ReviewComment().as_unique(self.session, pull_request_id=pr_id,
                                               commit_id=review.commit_id,
@@ -187,11 +211,11 @@ class GitHubBackend(Backend):
             db_review.original_commit_id = review.original_commit_id
         return db_review
 
-    def fetch_commit(self, commit, pr_id):
+    def _fetch_commit(self, commit, pr_id):
         db_commit = Commit().as_unique(self.session, pull_request_id=pr_id,
                                        sha=commit.sha)
-        db_commit.author = self.fetch_user(commit.author)
-        db_commit.committer = self.fetch_user(commit.committer)
+        db_commit.author = self._fetch_user(commit.author)
+        db_commit.committer = self._fetch_user(commit.committer)
 
         d = commit.as_dict()
 

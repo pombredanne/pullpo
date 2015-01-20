@@ -46,20 +46,18 @@ class Database(object):
         try:
             Base.metadata.create_all(self._engine)
         except OperationalError, e:
-            raise e
+            raise DatabaseError(error=e.orig[1], code=e.orig[0])
 
-    @contextmanager
     def connect(self):
-        session = self._Session()
+        return self._Session()
 
+    def store(self, session, obj):
         try:
-            yield session
+            session.add(obj)
             session.commit()
         except:
             session.rollback()
             raise
-        finally:
-            session.close()
 
     def clear(self):
         session = self._Session()
@@ -80,3 +78,16 @@ class Database(object):
                    Repository.owner == owner,
                    Repository.repository == repository).first()
         return max_date
+
+
+class DatabaseError(Exception):
+    """Database error exception"""
+
+    def __init__(self, error, code):
+        super(DatabaseError, self).__init__()
+        self.error = error
+        self.code = code
+
+    def __str__(self):
+        return "%(error)s (err: %(code)s)" % {'error' : self.error,
+                                              'code' : self.code}

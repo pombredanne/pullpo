@@ -33,3 +33,7 @@ class Backend(object):
 
     def fetch(self):
         raise NotImplementedError
+
+
+class BackendError(Exception):
+    """Backend error exception"""
