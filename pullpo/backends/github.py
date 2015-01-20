@@ -51,7 +51,7 @@ class GitHubBackend(Backend):
     def _fetch(self, owner, repository, since=None):
         repo = self.gh.repository(owner, repository)
 
-        if repo.is_null():
+        if isinstance(repo, github3.null.NullObject):
             raise BackendError("GitHub - Repository %s:%s does not exist."
                                % (owner, repository))
 
