@@ -49,10 +49,14 @@ class User(UniqueObject, Base):
     __tablename__ = 'people'
 
     id = Column(Integer, primary_key=True)
+    name = Column(String(256))
+    email = Column(String(256))
     login = Column(String(128))
     url = Column(String(256))
     avatar_url = Column(String(256))
     type = Column(String(32))
+
+    __table_args__ = {'mysql_charset': 'utf8'}
 
     @classmethod
     def unique_filter(cls, query, login):

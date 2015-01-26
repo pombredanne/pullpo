@@ -167,6 +167,7 @@ class GitHubBackend(Backend):
 
         if user.login not in self.USERS_CACHE:
             db_user = User().as_unique(self.session, login=user.login)
+            db_user.email = user.email
             db_user.avatar_url = user.avatar_url
             db_user.url = user.url
             db_user.type = user.type
@@ -214,16 +215,24 @@ class GitHubBackend(Backend):
     def _fetch_commit(self, commit, pr_id):
         db_commit = Commit().as_unique(self.session, pull_request_id=pr_id,
                                        sha=commit.sha)
-        db_commit.author = self._fetch_user(commit.author)
-        db_commit.committer = self._fetch_user(commit.committer)
 
         d = commit.as_dict()
 
-        ts = d['commit']['author']['date']
-        db_commit.author_date = self.unmarshal_timestamp(ts)
+        author = d['commit']['author']
+        db_commit.author_date = self.unmarshal_timestamp(author['date'])
+        db_commit.author = self._fetch_user(commit.author)
 
-        ts = d['commit']['committer']['date']
-        db_commit.commit_date = self.unmarshal_timestamp(ts)
+        if db_commit.author:
+            db_commit.author.name = author['name']
+            db_commit.author.email = author['email']
+
+        committer = d['commit']['committer']
+        db_commit.commit_date = self.unmarshal_timestamp(committer['date'])
+        db_commit.committer = self._fetch_user(commit.committer)
+
+        if db_commit.committer:
+            db_commit.committer.name = committer['name']
+            db_commit.committer.email = committer['email']
 
         return db_commit
 
