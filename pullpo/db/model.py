@@ -75,6 +75,8 @@ class Repository(UniqueObject, Base):
     prs = relationship('PullRequest', backref='repositories',
                        cascade="save-update, merge, delete")
 
+    __table_args__ = {'mysql_charset': 'utf8'}
+
     @classmethod
     def unique_filter(cls, query, owner, repository):
         return query.filter(Repository.owner == owner,
@@ -126,6 +128,8 @@ class PullRequest(UniqueObject, Base):
     assignee = relationship('User', foreign_keys=[assignee_id])
     merged_by = relationship('User', foreign_keys=[merged_by_id])
 
+    __table_args__ = {'mysql_charset': 'utf8'}
+
     @classmethod
     def unique_filter(cls, query, github_id):
         return query.filter(PullRequest.github_id == github_id)
@@ -146,6 +150,8 @@ class Comment(UniqueObject, Base):
 
     pull_request = relationship('PullRequest')
     user = relationship('User', foreign_keys=[user_id])
+
+    __table_args__ = {'mysql_charset': 'utf8'}
 
     @classmethod
     def unique_filter(cls, query, pull_request_id, user_id, created_at):
@@ -171,6 +177,8 @@ class ReviewComment(UniqueObject, Base):
 
     pull_request = relationship('PullRequest')
     user = relationship('User', foreign_keys=[user_id])
+
+    __table_args__ = {'mysql_charset': 'utf8'}
 
     @classmethod
     def unique_filter(cls, query, pull_request_id, commit_id, user_id, created_at):
@@ -198,6 +206,8 @@ class Commit(UniqueObject, Base):
     author = relationship('User', foreign_keys=[author_id])
     committer = relationship('User', foreign_keys=[committer_id])
 
+    __table_args__ = {'mysql_charset': 'utf8'}
+
     @classmethod
     def unique_filter(cls, query, pull_request_id, sha):
         return query.filter(Commit.pull_request_id == pull_request_id,
@@ -219,6 +229,8 @@ class Event(UniqueObject, Base):
                              ForeignKey('pull_requests.id', ondelete='CASCADE'),)
     pull_request = relationship('PullRequest')
     actor = relationship('User')
+
+    __table_args__ = {'mysql_charset': 'utf8'}
 
     @classmethod
     def unique_filter(cls, query, event_id):
