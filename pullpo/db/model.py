@@ -116,13 +116,13 @@ class PullRequest(UniqueObject, Base):
     repository = relationship('Repository', backref='pull_requests')
 
     comments = relationship('Comment',
-                            lazy='joined', cascade="save-update, merge, delete")
+                            cascade="save-update, merge, delete")
     review_comments = relationship('ReviewComment',
                                    lazy='joined', cascade="save-update, merge, delete")
     commits = relationship('Commit',
-                           lazy='joined', cascade="save-update, merge, delete")
+                           cascade="save-update, merge, delete")
     events = relationship('Event',
-                          lazy='joined', cascade="save-update, merge, delete")
+                          cascade="save-update, merge, delete")
 
     user = relationship('User', foreign_keys=[user_id])
     assignee = relationship('User', foreign_keys=[assignee_id])
