@@ -31,10 +31,15 @@ class GitHubBackend(Backend):
 
     PULL_REQUESTS_COUNT = 25
 
-    def __init__(self, user, password, session):
+    def __init__(self, user, password, session, enterprise_url=None):
         super(GitHubBackend, self).__init__('github')
 
-        self.gh = github3.login(user, password=password)
+        if enterprise_url:
+            self.gh = github3.GitHubEnterprise(enterprise_url, username=user,
+                                               password=password)
+        else:
+            self.gh = github3.login(user, password=password)
+
         self.USERS_CACHE = {}
         self.session = session
 
