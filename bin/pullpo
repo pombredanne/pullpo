@@ -47,7 +47,8 @@ def main():
         since = None
 
     try:
-        backend = GitHubBackend(args.gh_user, args.gh_password, session,
+        backend = GitHubBackend(args.gh_user, args.gh_password,
+                                args.gh_token, session,
                                 enterprise_url=args.gh_url)
 
         for repo in backend.fetch(args.owner, args.repository, since):
@@ -92,6 +93,9 @@ def parse_args():
                        default=None)
     group.add_argument('--gh-password', dest='gh_password',
                        help='GitHub user password',
+                       default=None)
+    group.add_argument('--gh-token', dest='gh_token',
+                       help='GitHub OAuth token',
                        default=None)
     group.add_argument('--gh-url', dest='gh_url',
                        help='URL of the GitHub Enterprise instance',
