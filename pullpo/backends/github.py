@@ -79,24 +79,30 @@ class GitHubBackend(Backend):
         count = self.PULL_REQUESTS_COUNT
 
         for issue in issues:
-            db_pr = self._fetch_pull_request(issue)
+            try:
+                db_pr = self._fetch_pull_request(issue)
 
-            # Check if the issue is a pull request
-            if not db_pr:
-                continue
+                # Check if the issue is a pull request
+                if not db_pr:
+                    continue
 
-            # Events are stored in issue object
-            for event in issue.events():
-                db_event = self._fetch_issue_event(event)
-                db_pr.events.append(db_event)
+                # Events are stored in issue object
+                for event in issue.events():
+                    db_event = self._fetch_issue_event(event)
+                    db_pr.events.append(db_event)
 
-            db_repo.prs.append(db_pr)
+                db_repo.prs.append(db_pr)
 
-            count = count - 1
+                count = count - 1
 
-            if not count:
-                count = self.PULL_REQUESTS_COUNT
-                yield db_repo
+                if not count:
+                    count = self.PULL_REQUESTS_COUNT
+                    yield db_repo
+            except github3.exceptions.ServerError, e:
+                import sys
+                msg = "Cannot retrieve pull request #%s. Skipping it. Error: %s\n" \
+                    % (issue.number, str(e))
+                sys.stderr.write(msg)
 
         yield db_repo
 
