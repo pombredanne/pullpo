@@ -48,10 +48,15 @@ class GitHubBackend(Backend):
         self.USERS_CACHE = {}
         self.session = session
 
-    def fetch(self, owner, repository, since=None):
+    def fetch(self, owner, repository=None, since=None):
         try:
-            for repo in  self._fetch(owner, repository, since):
-                yield repo
+            self._check_owner(owner)
+
+            repositories = self._fetch_repositories_list(owner, repository)
+
+            for repo in repositories:
+                for r in  self._fetch(owner, repo, since):
+                    yield r
         except github3.exceptions.ForbiddenError, e:
             msg = "GitHub - " + e.message + "To resume, wait some minutes"
             raise BackendError(msg)
@@ -59,22 +64,16 @@ class GitHubBackend(Backend):
             raise BackendError("GitHub - " + e.message)
 
     def _fetch(self, owner, repository, since=None):
-        repo = self.gh.repository(owner, repository)
-
-        if isinstance(repo, github3.null.NullObject):
-            raise BackendError("GitHub - Repository %s:%s does not exist."
-                               % (owner, repository))
-
         db_repo = Repository().as_unique(self.session,
                                          owner=owner,
                                          repository=repository)
 
         if not db_repo.id:
-            db_repo.name = repo.name
-            db_repo.url = repo.html_url
+            db_repo.name = repository.name
+            db_repo.url = repository.html_url
 
-        issues = repo.issues(state='all', sort='updated',
-                             direction='asc', since=since)
+        issues = repository.issues(state='all', sort='updated',
+                                   direction='asc', since=since)
 
         count = self.PULL_REQUESTS_COUNT
 
@@ -105,6 +104,27 @@ class GitHubBackend(Backend):
                 sys.stderr.write(msg)
 
         yield db_repo
+
+    def _check_owner(self, owner):
+        user = self.gh.user(owner)
+
+        if isinstance(user, github3.null.NullObject):
+            raise BackendError("GitHub - Owner %s does not exist." % (owner))
+
+    def _fetch_repositories_list(self, owner, repository=None):
+        if not repository:
+            repos = self.gh.repositories_by(owner, type='owner')
+            repositories = [r for r in repos]
+        else:
+            repo = self.gh.repository(owner, repository)
+
+            if isinstance(repo, github3.null.NullObject):
+                raise BackendError("GitHub - Repository %s:%s does not exist."
+                                   % (owner, repository))
+
+            repositories = [repo]
+
+        return repositories
 
     def _fetch_pull_request(self, issue):
         pr = issue.pull_request()

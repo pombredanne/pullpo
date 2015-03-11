@@ -103,7 +103,8 @@ def parse_args():
 
     # Positional arguments
     parser.add_argument('owner', help='Owner of the repository on GitHub')
-    parser.add_argument('repository', help='Name of the repository on GitHub')
+    parser.add_argument('repository', nargs='?', default=None,
+                        help='Name of the repository on GitHub')
 
     # Parse arguments
     args = parser.parse_args()
