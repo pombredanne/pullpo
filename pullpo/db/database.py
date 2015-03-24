@@ -68,15 +68,19 @@ class Database(object):
         session.close()
 
     def get_repository(self, session, owner, repository):
+        repository_name = owner + '/' + repository
+
         return session.query(Repository).\
             filter(Repository.owner == owner,
-                   Repository.repository == repository).first()
+                   Repository.repository == repository_name).first()
 
     def last_pull_request(self, session, owner, repository):
+        repository_name = owner + '/' + repository
+
         max_date = session.query(func.max(PullRequest.updated_at)).join(Repository).\
             filter(PullRequest.repo_id == Repository.id,
                    Repository.owner == owner,
-                   Repository.repository == repository).first()
+                   Repository.repository == repository_name).first()
         return max_date
 
 
