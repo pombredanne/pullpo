@@ -29,7 +29,7 @@ from pullpo.db.model import User, Commit, Comment, Event, ReviewComment,\
 
 class GitHubBackend(Backend):
 
-    PULL_REQUESTS_COUNT = 25
+    PULL_REQUESTS_COUNT = 5
 
     def __init__(self, user, password, token, session, enterprise_url=None):
         super(GitHubBackend, self).__init__('github')
