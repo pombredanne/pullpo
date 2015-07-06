@@ -48,14 +48,14 @@ class GitHubBackend(Backend):
         self.USERS_CACHE = {}
         self.session = session
 
-    def fetch(self, owner, repository=None, since=None):
+    def fetch(self, owner, repository=None, since=None, newest=False):
         try:
             self._check_owner(owner)
 
             repositories = self._fetch_repositories_list(owner, repository)
 
             for repo in repositories:
-                for r in  self._fetch(owner, repo, since):
+                for r in  self._fetch(owner, repo, since, newest):
                     yield r
         except github3.exceptions.ForbiddenError, e:
             msg = "GitHub - " + e.message + "To resume, wait some minutes"
@@ -63,7 +63,7 @@ class GitHubBackend(Backend):
         except github3.exceptions.AuthenticationFailed, e:
             raise BackendError("GitHub - " + e.message)
 
-    def _fetch(self, owner, repository, since=None):
+    def _fetch(self, owner, repository, since=None, newest=False):
         db_repo = Repository().as_unique(self.session,
                                          owner=owner,
                                          repository=repository)
@@ -72,8 +72,13 @@ class GitHubBackend(Backend):
             db_repo.name = repository.name
             db_repo.url = repository.html_url
 
+        direction = 'asc'
+
+        if newest:
+            direction = 'desc'
+
         issues = repository.issues(state='all', sort='updated',
-                                   direction='asc', since=since)
+                                   direction=direction, since=since)
 
         count = self.PULL_REQUESTS_COUNT
 

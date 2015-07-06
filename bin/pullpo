@@ -46,12 +46,14 @@ def main():
     else:
         since = None
 
+    newest = args.gh_newest_first
+
     try:
         backend = GitHubBackend(args.gh_user, args.gh_password,
                                 args.gh_token, session,
                                 enterprise_url=args.gh_url)
 
-        for repo in backend.fetch(args.owner, args.repository, since):
+        for repo in backend.fetch(args.owner, args.repository, since, newest):
             store(db, session, repo)
     except BackendError, e:
         raise RuntimeError(str(e))
@@ -100,6 +102,10 @@ def parse_args():
     group.add_argument('--gh-url', dest='gh_url',
                        help='URL of the GitHub Enterprise instance',
                        default=None)
+    group.add_argument('--gh-newest-first', dest='gh_newest_first',
+                       action='store_true',
+                       help='Retrieve newest issues first',
+                       default=False)
 
     # Positional arguments
     parser.add_argument('owner', help='Owner of the repository on GitHub')
