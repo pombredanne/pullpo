@@ -27,6 +27,10 @@ from pullpo.db.model import User, Commit, Comment, Event, ReviewComment,\
     Repository, PullRequest
 
 
+class GitHubRateLimitExceeded(BackedError):
+    """Rate limit exceeded error"""
+
+
 class GitHubBackend(Backend):
 
     PULL_REQUESTS_COUNT = 5
@@ -58,8 +62,7 @@ class GitHubBackend(Backend):
                 for r in  self._fetch(owner, repo, since, newest):
                     yield r
         except github3.exceptions.ForbiddenError, e:
-            msg = "GitHub - " + e.message + "To resume, wait some minutes"
-            raise BackendError(msg)
+            raise GitHubRateLimitExceeded(e.message)
         except github3.exceptions.AuthenticationFailed, e:
             raise BackendError("GitHub - " + e.message)
 

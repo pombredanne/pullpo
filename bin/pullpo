@@ -24,7 +24,7 @@
 from argparse import ArgumentParser
 
 from pullpo.backends import BackendError
-from pullpo.backends.github import GitHubBackend
+from pullpo.backends.github import GitHubBackend, GitHubRateLimitExceeded
 from pullpo.db.database import Database, DatabaseError
 
 
@@ -55,6 +55,9 @@ def main():
 
         for repo in backend.fetch(args.owner, args.repository, since, newest):
             store(db, session, repo)
+    except GitHubRateLimitExceeded, e:
+        msg = "GitHub - " + e.message + "To resume, wait some minutes"
+        print(msg)
     except BackendError, e:
         raise RuntimeError(str(e))
     finally:
