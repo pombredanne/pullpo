@@ -27,7 +27,7 @@ from pullpo.db.model import User, Commit, Comment, Event, ReviewComment,\
     Repository, PullRequest
 
 
-class GitHubRateLimitExceeded(BackedError):
+class GitHubRateLimitExceeded(BackendError):
     """Rate limit exceeded error"""
 
 
