@@ -227,8 +227,13 @@ class GitHubBackend(Backend):
         updated_at = self.unmarshal_timestamp(comment.updated_at)
         user = self._fetch_user(comment.user)
 
+        if user:
+            user_id = user.id
+        else:
+            user_id = None
+
         db_comment = Comment().as_unique(self.session, pull_request_id=pr_id,
-                                         user_id=user.id,
+                                         user_id=user_id,
                                          created_at=created_at)
 
         if db_comment.updated_at != updated_at:
@@ -243,9 +248,14 @@ class GitHubBackend(Backend):
         updated_at = self.unmarshal_timestamp(review.updated_at)
         user = self._fetch_user(review.user)
 
+        if user:
+            user_id = user.id
+        else:
+            user_id = None
+
         db_review = ReviewComment().as_unique(self.session, pull_request_id=pr_id,
                                               commit_id=review.commit_id,
-                                              user_id=user.id,
+                                              user_id=user_id,
                                               created_at=created_at)
 
         if db_review.updated_at != updated_at:
