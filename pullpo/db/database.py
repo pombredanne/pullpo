@@ -27,8 +27,9 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
+from sqlalchemy.sql import func
 
-from pullpo.db.model import Base
+from pullpo.db.model import Base, Repository, PullRequest
 
 
 class Database(object):
@@ -45,20 +46,18 @@ class Database(object):
         try:
             Base.metadata.create_all(self._engine)
         except OperationalError, e:
-            raise e
+            raise DatabaseError(error=e.orig[1], code=e.orig[0])
 
-    @contextmanager
     def connect(self):
-        session = self._Session()
+        return self._Session()
 
+    def store(self, session, obj):
         try:
-            yield session
+            session.add(obj)
             session.commit()
         except:
             session.rollback()
             raise
-        finally:
-            session.close()
 
     def clear(self):
         session = self._Session()
@@ -67,3 +66,32 @@ class Database(object):
             session.execute(table.delete())
             session.commit()
         session.close()
+
+    def get_repository(self, session, owner, repository):
+        repository_name = owner + '/' + repository
+
+        return session.query(Repository).\
+            filter(Repository.owner == owner,
+                   Repository.repository == repository_name).first()
+
+    def last_pull_request(self, session, owner, repository):
+        repository_name = owner + '/' + repository
+
+        max_date = session.query(func.max(PullRequest.updated_at)).join(Repository).\
+            filter(PullRequest.repo_id == Repository.id,
+                   Repository.owner == owner,
+                   Repository.repository == repository_name).first()
+        return max_date
+
+
+class DatabaseError(Exception):
+    """Database error exception"""
+
+    def __init__(self, error, code):
+        super(DatabaseError, self).__init__()
+        self.error = error
+        self.code = code
+
+    def __str__(self):
+        return "%(error)s (err: %(code)s)" % {'error' : self.error,
+                                              'code' : self.code}

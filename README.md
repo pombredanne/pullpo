@@ -38,7 +38,7 @@ Requirements
 * MySQL >= 5.5
 * SQLAlchemy >= 0.8
 * requests>=2.0.0
-* github3.py >= 0.9.3
+* github3.py >= 1.0a
 
 License
 -------
